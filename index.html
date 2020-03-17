@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta name="author" content="The Qt Company">
+    <meta name="description" content="The online Qt Design Viewer allows users to view and share Qml-based UI designs. The designs can be either created with the Qt Design Studio or be hand coded.">
+    <meta name="keywords" content="Qml, Qt Quick, Qt, Ui, Design Studio, Viewer, WebAssembly">
+    <meta name="viewport" content="width=device-width">
+    <link rel="icon" href="qtdesignstudioviewer-16.png" sizes="16x16">
+    <link rel="icon" href="qtdesignstudioviewer-32.png" sizes="32x32">
+    <link rel="icon" href="qtdesignstudioviewer-48.png" sizes="48x48">
+    <title>Qt Design Viewer</title>
+    <style>
+      @font-face {
+        font-family: Titillium;
+        src: url(Titillium-Light.otf);
+        font-weight: 300;
+      }
+      @font-face {
+        font-family: Titillium;
+        src: url(Titillium-Thin.otf);
+        font-weight: 100;
+      }
+      @font-face {
+        font-family: Titillium;
+        src: url(Titillium-ThinItalic.otf);
+        font-weight: 100;
+        font-style: italic;
+      }
+      html, body { padding: 0; margin: 0; background-color: #262525; color: #e0e0e0; font-family: Titillium; font-size: 1.1em; font-weight: 100; font-style: italic; }
+      a {color: #e0e0e0; }
+      canvas { border: 0px none; height: 0px; width: 0px; margin: auto; outline: 0px solid transparent; caret-color: transparent; cursor: default; }
+      #qtspinner { margin: 0; }
+      #title { font-size: 2em; font-weight: 300; font-style: normal; font-stretch: condensed; }
+      #instruction { font-style: normal; }
+      #subtitle { padding-top: 0.4em; padding-bottom: 1.4em; }
+      #dropzone { border: 0.18em dashed; text-align: center; background-color: #353535; }
+      #dropzone { padding: 1.2em; }
+      #dropzone, #projectsmenu { width: 70%; margin: auto; }
+      #projectsmenu { display: none; padding: 0; }
+      #projectsmenulist { list-style-type: none; background-color: #353535; }
+      #projectsmenulist, #projectsmenulist > li { float: left; padding: 0; margin: 0; }
+      #projectsmenulist > li { margin: 1em; }
+      #footer { padding-top: 1.2em; clear: both; font-size: 0.8em; text-align: center; }
+    </style>
+  </head>
+  <body onload="init()">
+    <figure style="overflow: visible;" id="qtspinner">
+      <center style="line-height:150%">
+        <img src="qtdesignstudioviewer-128.png" srcset="qtdesignstudioviewer-128.png 1x, qtdesignstudioviewer-256.png 2x, qtdesignstudioviewer-384.png 3x, qtdesignstudioviewer-512.png 4x, " width="128" height="128" style="display: block"/>
+        <div id="title">Qt Design Viewer</div>
+        <div id="subtitle" class="subtitleclass">powered by web assembly</div>
+        <div id="qtstatus"></div>
+        <noscript>JavaScript is disabled. Please enable JavaScript to use this application.</noscript>
+      </center>
+    </figure>
+    <div id="dropzone">
+      <div id="instruction">drop your qmlrc file or zip file here</div>
+      <p>(package with a pure Qml project, containing either a .qmlproject file or a main.qml)</p>
+      <form id="uploadform">
+      <label><input id="fileinput" type="file" accept=".qmlrc,.zip" style="display:none;" /><img src="uploadIcon.svg" width="32" height="32"/></br>(or load by clicking here)</label>
+      </form>
+    </div>
+    <div id="projectsmenu">
+      <p>EXAMPLES</p>
+      <ul id="projectsmenulist">
+      </ul>
+    </div>
+    <canvas id="qtcanvas" oncontextmenu="event.preventDefault()" contenteditable="true"></canvas>
+    <div id="footer">
+      <p>
+        Note: This is a static web page. The Qml application that You load runs and remains locally in Your browser, nothing gets uploaded into the cloud.
+      </p>
+      <p>
+        <a href="https://git.qt.io/aportale/designviewer">"Qt Design Viewer" sources</a>
+        | Made with: <a href="https://doc.qt.io/qt-5/wasm.html">Qt for WebAssembly</a>
+        | Powered by: <a href="https://webassembly.org/">WebAssembly</a> & <a href="https://emscripten.org/">emscripten</a>
+      </p>
+    <div>
+
+    <script type='text/javascript'>
+        var contentArray;
+        var projectfileName;
+        var reader;
+        var uploadform = document.querySelector('#uploadform');
+        var fileinput = document.querySelector('#fileinput');
+        var dropzone = document.querySelector('#dropzone');
+        var projectsmenu = document.querySelector('#projectsmenu');
+        var footer = document.querySelector('#footer');
+        var qtLoader;
+        
+        // Some of the current examples have a rather large hardcoded content
+        // size. Apply a scale factor so that they will fit typical screens.
+        let scaleFactor = 0.6;
+
+        function hideStuff() {
+           uploadform.style.display = dropzone.style.display = projectsmenu.style.display = footer.style.display = 'none';
+        }
+
+        function loadFileInHash() {
+          var filename = location.hash.split('#')[1]
+          loadFromServer(filename);
+        }
+
+        window.addEventListener('hashchange', function() {
+          if (location.hash == "") {
+            location.reload(); // E.g. when browsing back
+            return;
+          }
+          loadFileInHash();
+        }, false);
+
+        function handleFileSelection(event) {
+          reader = new FileReader();
+          var file = fileinput.files[0];
+          reader.onload = function() {
+              contentArray = new Uint8Array(reader.result);
+              hideStuff();
+              projectfileName = file.name;
+              loadProjector();
+          };
+          reader.readAsArrayBuffer(file);
+        }
+
+        function loadFromServer(fileName) {
+          var request = new XMLHttpRequest();
+          request.responseType = "arraybuffer";
+          request.onload = function () {
+            if (this.status == 404) {
+              alert(this.status + " " + this.statusText);
+              location.hash = "";
+              return;
+            }
+            contentArray = new Uint8Array(request.response);
+            hideStuff();
+            projectfileName = fileName;
+            loadProjector();
+          }
+          request.open("GET", "qmlprojects/" + fileName, true);
+          request.send(null);
+        }
+
+        function listExamples() {
+          var request = new XMLHttpRequest();
+          request.responseType = "json";
+          request.onload = function (oEvent) {
+            var json = request.response;
+            if (json.projects.length > 0) {
+              var projectsmenulist = document.querySelector('#projectsmenulist');
+              for (project in json.projects) {
+                var li = document.createElement('li');
+                var a = document.createElement('a');
+                var filename = json.projects[project].file;
+                a.setAttribute("href", '#' + filename);
+                a.innerHTML = filename;
+                li.appendChild(a);
+                projectsmenulist.appendChild(li);
+              }
+              projectsmenu.style.display = 'block';
+            }
+          }
+          request.open("GET", "qmlprojects/index.json", true);
+          request.send(null);
+        }
+
+        function init() {
+          if (location.hash == '')
+            listExamples();
+          else
+            loadFileInHash();
+
+          fileinput.onchange = handleFileSelection;
+          dropzone.ondragover = dropzone.ondragenter = function(event) {
+            event.preventDefault();
+          };
+          dropzone.ondrop = function(event) {
+            fileinput.files = event.dataTransfer.files;
+            handleFileSelection(event);
+            event.preventDefault();
+          };
+        }
+        
+        function loadProjector() {
+          var spinner = document.querySelector('#qtspinner');
+          var canvas = document.querySelector('#qtcanvas');
+          var status = document.querySelector('#qtstatus')
+
+          qtLoader = QtLoader({
+            canvasElements : [canvas],
+            environment : {"QT_SCALE_FACTOR" : `${scaleFactor}`},
+            showLoader: function(loaderStatus) {
+                spinner.style.display = 'block';
+                canvas.style.display = 'none';
+                status.innerHTML = loaderStatus + "...";
+            },
+            showError: function(errorText) {
+                status.innerHTML = errorText;
+                spinner.style.display = 'block';
+                canvas.style.display = 'none';
+            },
+            showExit: function() {
+                status.innerHTML = "Application exit";
+                if (qtLoader.exitCode !== undefined)
+                    status.innerHTML += " with code " + qtLoader.exitCode;
+                if (qtLoader.exitText !== undefined)
+                    status.innerHTML += " (" + qtLoader.exitText + ")";
+                spinner.style.display = 'block';
+                canvas.style.display = 'none';
+            },
+            showCanvas: function() {
+                spinner.style.display = 'none';
+                canvas.style.display = 'block';
+            },
+          });
+          qtLoader.loadEmscriptenModule("qmlprojector");
+        }
+
+        function setScreenSize(width, height) {
+            
+          console.log("setScreenSize " + width + " " + height);
+            
+          var canvas = document.querySelector('#qtcanvas');
+          if (width > 1 && height > 1) {
+            
+            canvas.style.width = `${width * scaleFactor}px`;
+            canvas.style.height = `${height * scaleFactor}px`;
+            
+            // fit-to-viewport-with
+             // let scale = document.documentElement.clientWidth / width;
+           // console.log(`scale ${scale}`)
+            //canvas.style.transform = `scale(${scale})`;
+            //canvas.style.transformOrigin = "top left";
+//            canvas.style.zoom = 0.6;
+//            document.body.style.zoom = 0.6;
+            
+          } else {
+            // undefined root size
+            canvas.style.width = canvas.style.height = "100%";
+            document.documentElement.style.height = document.body.style.height = "100%";
+            document.documentElement.style.overflow = document.body.style.overflow = "hidden";
+          }
+          qtLoader.resizeCanvasElement(canvas);
+        }
+    </script>
+    <script type="text/javascript" src="qtloader.js"></script>
+  </body>
+</html>

@@ -1,0 +1,9 @@
+{
+    "projects": [
+        { "file": "ClusterTutorial.qmlrc"},
+        { "file": "CoffeeMachine.qmlrc"},
+        { "file": "EBikeDesign.qmlrc"},
+        { "file": "SideMenu.qmlrc"},
+        { "file": "WebinarDemo.qmlrc"}
+    ]
+}

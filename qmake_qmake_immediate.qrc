@@ -1,0 +1,5 @@
+<!DOCTYPE RCC><RCC version="1.0">
+<qresource prefix="/">
+<file alias="importdummy.qml">/Users/msorvig/code/qt-webassembly-5.15-complete/designviewer/importdummy.qml</file>
+</qresource>
+</RCC>
